@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tanks War</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#efe6cc;--ink:#2b2218;--olive:#6b9a5b;--red:#d9534f;--mus:#e0a82e;--panel:#fbf5e2;color-scheme:light}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);font-family:'Baloo 2',system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas#c{display:block;width:100%;height:100%}
+.hud{position:fixed;left:0;right:0;top:0;display:flex;gap:14px;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 8px) 14px 0;pointer-events:none;font-weight:800;font-size:18px}
+.bar{flex:1;max-width:220px;height:16px;border:3px solid var(--ink);border-radius:9px;background:#fbf5e2;overflow:hidden}
+#hpf{height:100%;width:100%;background:var(--olive);transition:width .15s}
+.hud span.sp{margin-left:auto}
+.pad{position:fixed;bottom:0;display:none;padding:0 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+body.playing .pad{display:grid}
+.pad.l{left:0;grid-template-areas:". u ." "l d r";gap:8px}
+.pad.r{right:0;align-items:end}
+.ctl{width:68px;height:68px;border-radius:18px;border:3px solid var(--ink);background:rgba(43,34,24,.55);color:var(--paper);font:800 26px 'Baloo 2',sans-serif;padding:0;touch-action:none}
+.ctl.on{background:var(--ink);transform:scale(.94)}
+.ctl[data-k=u]{grid-area:u}.ctl[data-k=l]{grid-area:l}.ctl[data-k=d]{grid-area:d}.ctl[data-k=r]{grid-area:r}
+.ctl.fire{width:104px;height:104px;border-radius:50%;background:rgba(217,83,79,.85);font-size:22px}
+.ctl.fire.on{background:#a8302d}
+.ov{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(239,230,204,.82);touch-action:pan-y}
+.hide{display:none!important}
+.panel{background:var(--panel);border:4px solid var(--ink);border-radius:22px;padding:22px;max-width:420px;width:100%;text-align:center;box-shadow:6px 6px 0 var(--ink);max-height:100%;overflow:auto}
+h1{margin:0;font-size:40px;line-height:1;font-weight:800}
+p{margin:8px 0;font-size:17px;line-height:1.35}
+.btn{font:800 21px 'Baloo 2',sans-serif;color:var(--ink);background:var(--mus);border:3px solid var(--ink);border-radius:14px;padding:8px 22px;margin:6px 4px 0;cursor:pointer;box-shadow:0 4px 0 var(--ink);touch-action:manipulation}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.btn:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.btn.alt{background:var(--panel)}
+.btn:disabled{opacity:.5}
+.grid{display:grid;gap:10px;margin-top:10px;text-align:left}
+.card{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center;border:3px solid var(--ink);border-radius:14px;padding:8px;background:#fff9e8}
+.card.sel{background:#dff0cf}
+.card b{font-size:19px}
+.st{display:grid;grid-template-columns:62px 1fr;font-size:13px;gap:1px 6px;align-items:center}
+.st i{display:block;height:7px;border-radius:4px;background:var(--ink)}
+.card .btn{font-size:16px;padding:3px 14px;margin:6px 0 0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><div class="bar"><div id="hpf"></div></div><span id="wv">Dalga 1</span><span class="sp">Altın: <span id="cn">0</span></span></div>
+<div class="pad l"><button class="ctl" data-k="u" aria-label="İleri">▲</button><button class="ctl" data-k="l" aria-label="Sola dön">◀</button><button class="ctl" data-k="d" aria-label="Geri">▼</button><button class="ctl" data-k="r" aria-label="Sağa dön">▶</button></div>
+<div class="pad r"><button class="ctl fire" data-k="f">ATEŞ</button></div>
+
+<div class="ov" id="ov"><div class="panel">
+  <h1 id="ttl">Tanks War</h1>
+  <p id="msg">Düşman tankları yok et, altın kazan, garajdan daha güçlü tank satın al.</p>
+  <button class="btn" id="go">Başla</button><button class="btn alt" id="gar">Garaj</button>
+</div></div>
+<div class="ov hide" id="shop"><div class="panel">
+  <h1>Garaj</h1><p>Altının: <b id="sc">0</b></p>
+  <div class="grid" id="cards"></div>
+  <button class="btn" id="back">Geri</button>
+</div></div>
+
+<script>
+const $=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d');
+let W,H,S;
+function resize(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);S=Math.max(.75,Math.min(1.3,Math.min(W,H)/560))}
+addEventListener('resize',resize);resize();
+const T=[
+ {n:'Çaylak',c:'#6b9a5b',sp:110,hp:100,dm:20,rl:.55,p:0,k:1,bl:24},
+ {n:'Şimşek',c:'#4aa3c9',sp:170,hp:75,dm:14,rl:.28,p:150,k:1,bl:22},
+ {n:'Kale',c:'#9a8658',sp:80,hp:240,dm:34,rl:.8,p:350,k:1,bl:28},
+ {n:'Üçlü',c:'#d9803f',sp:105,hp:130,dm:16,rl:.7,p:500,k:3,bl:24},
+ {n:'Roket',c:'#a24ac9',sp:90,hp:170,dm:60,rl:1.1,p:800,k:1,bl:30,sx:1}
+];
+let sv={coins:0,own:[0],sel:0};
+try{const j=JSON.parse(localStorage.getItem('tank_save'));if(j&&j.own)sv=j}catch(e){}
+function save(){try{localStorage.setItem('tank_save',JSON.stringify(sv))}catch(e){}}
+const held={};
+let st='menu',P,en=[],bl=[],pt=[],walls=[],wave=0,queue=0,qt=0,toast='',toastT=0,run=0,last=0;
+const R=Math.random,na=a=>{while(a>Math.PI)a-=6.2832;while(a<-Math.PI)a+=6.2832;return a};
+
+// tank drawing
+function tank(c,x,y,a,col,sc,bl){
+  c.save();c.translate(x,y);c.rotate(a);c.scale(sc,sc);c.lineWidth=2.5;c.strokeStyle='#2b2218';c.lineJoin='round';
+  c.fillStyle='#4a3f33';c.fillRect(-17,-15,34,7);c.strokeRect(-17,-15,34,7);c.fillRect(-17,8,34,7);c.strokeRect(-17,8,34,7);
+  c.fillStyle=col;c.beginPath();c.rect(-15,-10,30,20);c.fill();c.stroke();
+  c.fillStyle='#2b2218';c.fillRect(2,-2.5,bl-2,5);
+  c.fillStyle=col;c.beginPath();c.arc(0,0,8,0,6.2832);c.fill();c.stroke();
+  c.fillStyle='rgba(255,255,255,.35)';c.beginPath();c.arc(-2,-2,3,0,6.2832);c.fill();
+  c.restore();
+}
+// shop
+function renderShop(){
+  $('sc').textContent=sv.coins;$('cn').textContent=sv.coins;
+  const g=$('cards');g.innerHTML='';
+  T.forEach((t,i)=>{
+    const own=sv.own.includes(i),el=document.createElement('div');el.className='card'+(sv.sel===i?' sel':'');
+    const pw=Math.min(1,t.dm*t.k*(t.sx?1:1)/60);
+    el.innerHTML='<canvas width="64" height="64"></canvas><div><b>'+t.n+'</b><div class="st"><span>Hız</span><i style="width:'+t.sp/170*100+'%"></i><span>Zırh</span><i style="width:'+t.hp/240*100+'%"></i><span>Güç</span><i style="width:'+pw*100+'%"></i><span>Atış</span><i style="width:'+Math.min(100,.28/t.rl*100*1.0+ (t.rl<.4?0:0))+'%"></i></div></div>';
+    const b=document.createElement('button');b.className='btn';
+    b.textContent=sv.sel===i?'Seçili':own?'Seç':'Satın al ('+t.p+' altın)';
+    b.disabled=sv.sel===i;
+    b.onclick=()=>{
+      if(own){sv.sel=i}else if(sv.coins>=t.p){sv.coins-=t.p;sv.own.push(i);sv.sel=i}else{b.textContent='Altın yetmiyor';return}
+      save();renderShop();
+    };
+    el.lastChild.appendChild(b);g.appendChild(el);
+    const c=el.querySelector('canvas').getContext('2d');tank(c,32,32,-.5,t.c,1.3,t.bl);
+  });
+}
+$('gar').onclick=()=>{renderShop();$('ov').classList.add('hide');$('shop').classList.remove('hide')};
+$('back').onclick=()=>{$('shop').classList.add('hide');$('ov').classList.remove('hide');menuText()};
+function menuText(){if(st==='menu')$('msg').textContent='Düşman tankları yok et, altın kazan, garajdan daha güçlü tank satın al. Altının: '+sv.coins}
+menuText();
+
+// game
+function makeWalls(){
+  walls=[];let n=0;
+  while(walls.length<7&&n++<60){
+    const w=(50+R()*70)*S,h=(40+R()*60)*S,x=R()*(W-w),y=60+R()*(H-h-60);
+    if(x<W/2+90*S&&x+w>W/2-90*S&&y<H/2+90*S&&y+h>H/2-90*S)continue;
+    walls.push({x,y,w,h});
+  }
+}
+function nextWave(){
+  wave++;queue=Math.min(30,3+wave*2);qt=0;
+  if(wave>1){const b=20+wave*5;sv.coins+=b;run+=b;P.hp=Math.min(P.mx,P.hp+P.mx*.3);save();toast='Dalga '+wave+'  +'+b+' altın'}else toast='Dalga 1';
+  toastT=1.8;
+}
+function spawnEnemy(){
+  let x,y,k=0;do{const s=R()*4|0;x=s<2?R()*W:(s===2?-20:W+20);y=s<2?(s?H+20:30):60+R()*(H-60);k++}while(Math.hypot(x-P.x,y-P.y)<220*S&&k<20);
+  const heavy=wave>=3&&R()<Math.min(.5,(wave-2)*.12),f=1+wave*.08;
+  const hp=(heavy?110:40)*f;
+  en.push({x,y,a:R()*6,hp,mx:hp,heavy,r:(heavy?19:15)*S,sc:(heavy?1.3:1)*S,sp:heavy?50:70,dm:heavy?18:10,rl:heavy?1.4:1.8,cd:1+R(),col:heavy?'#7a2e2e':'#d9534f',coin:heavy?25:10,av:0,dir:R()<.5?-1:1});
+}
+function start(){
+  const t=T[sv.sel];P={x:W/2,y:H/2,a:-Math.PI/2,hp:t.hp,mx:t.hp,cd:0,r:15*S};
+  en=[];bl=[];pt=[];wave=0;run=0;makeWalls();nextWave();st='play';
+  document.body.classList.add('playing');$('ov').classList.add('hide');upd();
+}
+function over(){
+  st='over';save();document.body.classList.remove('playing');
+  $('ttl').textContent='Tankın yok oldu';
+  $('msg').textContent='Dalga '+wave+' · Bu turda '+run+' altın kazandın. Toplam: '+sv.coins+' altın';
+  $('go').textContent='Tekrar oyna';$('ov').classList.remove('hide');
+}
+$('go').onclick=start;
+function upd(){$('hpf').style.width=Math.max(0,P.hp/P.mx*100)+'%';$('hpf').style.background=P.hp/P.mx<.3?'var(--red)':'var(--olive)';$('wv').textContent='Dalga '+wave;$('cn').textContent=sv.coins}
+function burst(x,y,col,n,sp){for(let i=0;i<n;i++){const a=R()*6.28,s=(40+R()*(sp||140))*S;pt.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,l:.4+R()*.4,c:col})}}
+function solve(o){
+  let hit=false;
+  for(const w of walls){
+    const cx=Math.max(w.x,Math.min(o.x,w.x+w.w)),cy=Math.max(w.y,Math.min(o.y,w.y+w.h)),dx=o.x-cx,dy=o.y-cy,d=Math.hypot(dx,dy);
+    if(d<o.r){hit=true;if(d>0){o.x+=dx/d*(o.r-d);o.y+=dy/d*(o.r-d)}else o.y-=o.r}
+  }
+  const t=60*S;
+  if(o.x<o.r){o.x=o.r;hit=true}if(o.x>W-o.r){o.x=W-o.r;hit=true}
+  if(o.y<o.r+t*.6){o.y=o.r+t*.6;hit=true}if(o.y>H-o.r){o.y=H-o.r;hit=true}
+  return hit;
+}
+function shoot(o,a,dm,own,sx){
+  const sp=(sx?380:460)*S;
+  bl.push({x:o.x+Math.cos(a)*24*S,y:o.y+Math.sin(a)*24*S,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,dm,own,sx,life:1.6});
+  burst(o.x+Math.cos(a)*26*S,o.y+Math.sin(a)*26*S,'#e0a82e',3,60);
+}
+function boom(x,y,dm){
+  burst(x,y,'#e0a82e',18,220);burst(x,y,'#d9534f',10,160);
+  for(const e of en){const d=Math.hypot(e.x-x,e.y-y);if(d<70*S)hurt(e,dm*(1-d/(100*S)))}
+}
+function hurt(e,d){e.hp-=d;burst(e.x,e.y,'#fff',3,80)}
+function update(dt){
+  const t=T[sv.sel];
+  // player
+  P.a+=((held.r?1:0)-(held.l?1:0))*3.1*dt;
+  const v=((held.u?1:0)-(held.d?.7:0))*t.sp*S;
+  P.x+=Math.cos(P.a)*v*dt;P.y+=Math.sin(P.a)*v*dt;solve(P);
+  P.cd-=dt;
+  if(held.f&&P.cd<=0){P.cd=t.rl;(t.k===3?[-.2,0,.2]:[0]).forEach(d=>shoot(P,P.a+d,t.dm,1,t.sx))}
+  // spawn
+  if(queue>0){qt-=dt;if(qt<=0){spawnEnemy();queue--;qt=Math.max(.6,1.8-wave*.1)}}
+  // enemies
+  for(const e of en){
+    const dx=P.x-e.x,dy=P.y-e.y,dist=Math.hypot(dx,dy),df=na(Math.atan2(dy,dx)-e.a);
+    if(e.av>0){e.av-=dt;e.a+=e.dir*2.5*dt}else e.a+=Math.max(-2*dt,Math.min(2*dt,df));
+    const fwd=dist>200*S?1:dist<120*S?-.6:0;
+    e.x+=Math.cos(e.a)*e.sp*S*fwd*dt;e.y+=Math.sin(e.a)*e.sp*S*fwd*dt;
+    if(solve(e)&&e.av<=0){e.av=.6;e.dir=R()<.5?-1:1}
+    for(const o of en)if(o!==e){const ox=e.x-o.x,oy=e.y-o.y,d=Math.hypot(ox,oy),m=e.r+o.r;if(d>0&&d<m){e.x+=ox/d*(m-d)/2;e.y+=oy/d*(m-d)/2}}
+    const pd=Math.hypot(e.x-P.x,e.y-P.y),pm=e.r+P.r;if(pd>0&&pd<pm){e.x+=(e.x-P.x)/pd*(pm-pd);e.y+=(e.y-P.y)/pd*(pm-pd)}
+    e.cd-=dt;
+    if(e.cd<=0&&Math.abs(df)<.2&&dist<540*S){shoot(e,e.a,e.dm,0,0);e.cd=e.rl*(.8+R()*.5)}
+  }
+  // bullets
+  for(let i=bl.length-1;i>=0;i--){
+    const b=bl[i];b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;let dead=b.life<=0||b.x<0||b.x>W||b.y<0||b.y>H;
+    if(!dead)for(const w of walls)if(b.x>w.x&&b.x<w.x+w.w&&b.y>w.y&&b.y<w.y+w.h){dead=true;burst(b.x,b.y,'#8a6a3a',4,80);break}
+    if(!dead&&b.own){for(const e of en)if(Math.hypot(e.x-b.x,e.y-b.y)<e.r+4){dead=true;hurt(e,b.dm);break}}
+    else if(!dead&&Math.hypot(P.x-b.x,P.y-b.y)<P.r+4){dead=true;P.hp-=b.dm;burst(P.x,P.y,'#d9534f',6,100);upd();if(P.hp<=0){burst(P.x,P.y,'#e0a82e',30,260);over();return}}
+    if(dead){if(b.sx)boom(b.x,b.y,b.dm);bl.splice(i,1)}
+  }
+  for(let i=en.length-1;i>=0;i--){const e=en[i];if(e.hp<=0){sv.coins+=e.coin;run+=e.coin;burst(e.x,e.y,'#4a3f33',20,200);burst(e.x,e.y,'#e0a82e',8,120);en.splice(i,1);upd()}}
+  if(!queue&&!en.length){save();nextWave();upd()}
+  for(let i=pt.length-1;i>=0;i--){const q=pt[i];q.x+=q.vx*dt;q.y+=q.vy*dt;q.l-=dt;if(q.l<=0)pt.splice(i,1)}
+  toastT=Math.max(0,toastT-dt);
+}
+function draw(){
+  ctx.fillStyle='#efe6cc';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(43,34,24,.07)';ctx.lineWidth=1;ctx.beginPath();
+  for(let x=0;x<W;x+=40){ctx.moveTo(x,0);ctx.lineTo(x,H)}for(let y=0;y<H;y+=40){ctx.moveTo(0,y);ctx.lineTo(W,y)}ctx.stroke();
+  for(const w of walls){
+    ctx.fillStyle='#c8a566';ctx.strokeStyle='#2b2218';ctx.lineWidth=3;ctx.fillRect(w.x,w.y,w.w,w.h);ctx.strokeRect(w.x,w.y,w.w,w.h);
+    ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(w.x,w.y);ctx.lineTo(w.x+w.w,w.y+w.h);ctx.moveTo(w.x+w.w,w.y);ctx.lineTo(w.x,w.y+w.h);ctx.stroke();
+  }
+  if(P){
+    for(const e of en){tank(ctx,e.x,e.y,e.a,e.col,e.sc,24);if(e.hp<e.mx){ctx.fillStyle='#2b2218';ctx.fillRect(e.x-16*S,e.y-e.r-9,32*S,5);ctx.fillStyle='#d9534f';ctx.fillRect(e.x-15*S,e.y-e.r-8,30*S*Math.max(0,e.hp/e.mx),3)}}
+    if(st==='play')tank(ctx,P.x,P.y,P.a,T[sv.sel].c,S,T[sv.sel].bl);
+    for(const b of bl){ctx.fillStyle=b.own?'#2b2218':'#d9534f';ctx.strokeStyle='#2b2218';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(b.x,b.y,(b.sx?6:4)*S,0,6.2832);ctx.fill();ctx.stroke()}
+    for(const q of pt){ctx.globalAlpha=Math.max(0,q.l*2);ctx.fillStyle=q.c;ctx.fillRect(q.x-2,q.y-2,4,4)}
+    ctx.globalAlpha=1;
+  }
+  if(toastT>0){ctx.globalAlpha=Math.min(1,toastT*2);ctx.fillStyle='#2b2218';ctx.font='800 '+Math.round(36*S)+'px "Baloo 2",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(toast,W/2,H*.3);ctx.globalAlpha=1}
+}
+function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;if(st==='play')update(dt);draw();requestAnimationFrame(loop)}
+makeWalls();requestAnimationFrame(loop);
+
+// controls
+document.querySelectorAll('.ctl').forEach(b=>{
+  const k=b.dataset.k,on=e=>{e.preventDefault();held[k]=1;b.classList.add('on');try{b.setPointerCapture(e.pointerId)}catch(x){}},off=()=>{held[k]=0;b.classList.remove('on')};
+  b.addEventListener('pointerdown',on);['pointerup','pointercancel','lostpointercapture'].forEach(n=>b.addEventListener(n,off));
+  b.addEventListener('contextmenu',e=>e.preventDefault());
+});
+const km={arrowup:'u',w:'u',arrowdown:'d',s:'d',arrowleft:'l',a:'l',arrowright:'r',d:'r',' ':'f'};
+addEventListener('keydown',e=>{const k=km[e.key.toLowerCase()];if(k){held[k]=1;if(st==='play')e.preventDefault()}});
+addEventListener('keyup',e=>{const k=km[e.key.toLowerCase()];if(k)held[k]=0});
+</script>
+</body>
+</html>

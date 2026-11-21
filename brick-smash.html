@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Brick Smash</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#efe6cc;--ink:#2b2218;--mus:#e0a82e;--red:#d9534f;--panel:#fbf5e2;color-scheme:light}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);font-family:'Baloo 2',system-ui,sans-serif;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100%;height:100%}
+.hud{position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;padding:calc(env(safe-area-inset-top,0px) + 6px) 16px 0;pointer-events:none;font-weight:800;font-size:20px}
+.hud small{font-weight:600;font-size:14px;opacity:.7;margin-left:6px}
+#lv{color:var(--red);letter-spacing:2px}
+.ov{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(239,230,204,.82)}
+.hide{display:none!important}
+.panel{background:var(--panel);border:4px solid var(--ink);border-radius:22px;padding:22px;max-width:410px;width:100%;text-align:center;box-shadow:6px 6px 0 var(--ink)}
+h1{margin:0;font-size:42px;line-height:1;font-weight:800}
+p{margin:8px 0;font-size:17px;line-height:1.35}
+.pu{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;font-size:14px;margin:6px 0}
+.pu span{background:#fff9e8;border:2px solid var(--ink);border-radius:10px;padding:1px 8px}
+.btn{font:800 22px 'Baloo 2',sans-serif;color:var(--ink);background:var(--mus);border:3px solid var(--ink);border-radius:14px;padding:8px 28px;margin-top:8px;cursor:pointer;box-shadow:0 4px 0 var(--ink)}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.btn:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><div><span id="sc">0</span><small>En iyi <span id="bs">0</span></small></div><div><span id="lvn">Seviye 1</span> <span id="lv">♥♥♥</span></div></div>
+<div class="ov" id="ov"><div class="panel">
+  <h1 id="ttl">Brick Smash</h1>
+  <p id="msg">Topu paletle zıplat, tüm tuğlaları kır. Düşen kapsülleri yakala.</p>
+  <div class="pu" id="pu"><span><b>W</b> geniş palet</span><span><b>M</b> 3 top</span><span><b>S</b> yavaş top</span><span><b>+</b> ekstra can</span></div>
+  <p id="how">Parmağını ya da fareni sürükle, ok tuşlarıyla da oynanır. Topu başlatmak için dokun, tıkla veya Boşluk. P: duraklat.</p>
+  <button class="btn" id="go">Başla</button>
+</div></div>
+<script>
+const $=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),R=Math.random;
+let W,H,S,st='menu',last=0;
+function resize(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);S=Math.max(.75,Math.min(1.35,Math.min(W,H*.75)/480))}
+addEventListener('resize',resize);resize();
+let best=0;try{best=+localStorage.getItem('bricksmash_best')||0}catch(e){}
+$('bs').textContent=best;
+const COL=['#d9534f','#e0a82e','#6b9a5b','#4aa3c9','#a24ac9','#d9803f'];
+let pad,balls,bricks,ups,pt,score,lives,level,tx,wideT,slowT,toast,toastT,shake;const keys={};
+let ac=null;function beep(f,d,ty,v){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type=ty||'triangle';o.frequency.value=f;g.gain.value=v||.04;g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
+const spd=()=>Math.min(640,400+level*24)*S;
+function build(){
+  bricks=[];const cols=8,mx=14*S,top=84*S,bw=(W-mx*2)/cols,bh=24*S,rows=Math.min(9,4+level),pat=level%3;
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    if(pat===1&&(r+c)%2)continue;if(pat===2&&c%3===1&&r%2===0)continue;
+    const hp=(level>1&&(R()<Math.min(.4,level*.07)||(level>=3&&r===0)))?2:1;
+    bricks.push({x:mx+c*bw+1,y:top+r*(bh+3*S),w:bw-2,h:bh,hp,mh:hp,c:COL[r%6]});
+  }
+}
+function ball0(){balls=[{x:pad.x,y:pad.y-pad.h/2-8*S,vx:0,vy:0,r:8*S,stuck:true}]}
+function launch(){
+  if(st!=='play')return;
+  for(const b of balls)if(b.stuck){b.stuck=false;const a=(R()-.5)*.6;b.vx=Math.sin(a)*spd();b.vy=-Math.cos(a)*spd();beep(520,.08)}
+}
+function start(){
+  pad={x:W/2,w:110*S,bw:110*S,y:H-(H>W?96:60)*S,h:14*S};tx=pad.x;
+  score=0;lives=3;level=1;wideT=0;slowT=0;ups=[];pt=[];toast='';toastT=0;shake=0;
+  build();ball0();st='play';$('ov').classList.add('hide');hud();
+}
+function over(){
+  st='over';const nb=score>best;if(nb){best=score;try{localStorage.setItem('bricksmash_best',best)}catch(e){}}
+  $('ttl').textContent=nb?'Yeni rekor!':'Oyun bitti';
+  $('msg').textContent='Skorun: '+score+', seviye '+level+'.';
+  $('pu').classList.add('hide');$('how').textContent='En iyi skor: '+best;
+  $('go').textContent='Tekrar oyna';$('ov').classList.remove('hide');hud();beep(150,.5,'sawtooth',.06);
+}
+function hud(){$('sc').textContent=score;$('bs').textContent=best;$('lv').textContent='♥'.repeat(Math.max(0,lives));$('lvn').textContent='Seviye '+level}
+$('go').onclick=start;
+function px(e){const r=cv.getBoundingClientRect();tx=e.clientX-r.left}
+cv.addEventListener('pointermove',e=>{if(st==='play')px(e)});
+cv.addEventListener('pointerdown',e=>{if(st==='play'){px(e);launch()}else if(st==='pause')st='play'});
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k==='arrowleft'||k==='a')keys.l=1;if(k==='arrowright'||k==='d')keys.r=1;
+  if(k===' '){e.preventDefault();if(st==='play')launch();else if(st==='pause')st='play';else if(!e.repeat)start()}
+  if(k==='enter'&&st!=='play'&&st!=='pause')start();
+  if(k==='p'&&(st==='play'||st==='pause'))st=st==='play'?'pause':'play';
+});
+addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keys.l=0;if(k==='arrowright'||k==='d')keys.r=0});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&st==='play')st='pause'});
+function burst(x,y,c,n){for(let i=0;i<n;i++){const a=R()*6.28,s=(50+R()*160)*S;pt.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,l:.5+R()*.3,c})}}
+function norm(b,s){const m=Math.hypot(b.vx,b.vy)||1;b.vx*=s/m;b.vy*=s/m}
+function drop(x,y){
+  if(R()>.2)return;
+  const r=R(),t=r<.3?'W':r<.55?'M':r<.8?'S':'+';
+  ups.push({x,y,t});
+}
+function apply(t){
+  beep(880,.15,'sine');
+  if(t==='W'){wideT=12;toast='Geniş palet';}
+  else if(t==='S'){slowT=9;toast='Yavaş top';}
+  else if(t==='+'){lives=Math.min(5,lives+1);toast='Ekstra can';}
+  else{
+    const add=[];for(const b of balls){if(b.stuck)continue;for(const a of[-.45,.45]){const c=Math.cos(a),s=Math.sin(a);add.push({x:b.x,y:b.y,r:b.r,stuck:false,vx:b.vx*c-b.vy*s,vy:b.vx*s+b.vy*c})}}
+    balls.push(...add.slice(0,8));toast='3 top';
+  }
+  toastT=1.2;hud();
+}
+function step(b,dt){
+  const sf=slowT>0?.72:1;b.x+=b.vx*sf*dt;b.y+=b.vy*sf*dt;
+  const top=48*S;
+  if(b.x<b.r){b.x=b.r;b.vx=Math.abs(b.vx)}if(b.x>W-b.r){b.x=W-b.r;b.vx=-Math.abs(b.vx)}
+  if(b.y<top+b.r){b.y=top+b.r;b.vy=Math.abs(b.vy)}
+  if(b.vy>0&&b.y+b.r>=pad.y-pad.h/2&&b.y-b.r<=pad.y+pad.h/2&&Math.abs(b.x-pad.x)<pad.w/2+b.r){
+    const h=Math.max(-1,Math.min(1,(b.x-pad.x)/(pad.w/2))),a=h*1.0;
+    b.vx=Math.sin(a)*spd();b.vy=-Math.cos(a)*spd();b.y=pad.y-pad.h/2-b.r;beep(330,.06);
+  }
+  for(let i=0;i<bricks.length;i++){
+    const k=bricks[i],cx=Math.max(k.x,Math.min(b.x,k.x+k.w)),cy=Math.max(k.y,Math.min(b.y,k.y+k.h)),dx=b.x-cx,dy=b.y-cy;
+    if(dx*dx+dy*dy<b.r*b.r){
+      if(dx===0&&dy===0)b.vy=-b.vy;
+      else if(Math.abs(dx)*k.h>Math.abs(dy)*k.w){b.vx=dx>0?Math.abs(b.vx):-Math.abs(b.vx);b.x=cx+(dx>0?1:-1)*b.r}
+      else{b.vy=dy>0?Math.abs(b.vy):-Math.abs(b.vy);b.y=cy+(dy>0?1:-1)*b.r}
+      k.hp--;
+      if(k.hp<=0){bricks.splice(i,1);score+=10*level;burst(k.x+k.w/2,k.y+k.h/2,k.c,10);drop(k.x+k.w/2,k.y+k.h/2);beep(600+R()*200,.07)}
+      else{score+=5;beep(260,.07);burst(b.x,b.y,'#2b2218',3)}
+      hud();break;
+    }
+  }
+}
+function update(dt){
+  if(keys.l)tx-=720*S*dt;if(keys.r)tx+=720*S*dt;
+  tx=Math.max(pad.w/2,Math.min(W-pad.w/2,tx));
+  pad.x+=(tx-pad.x)*Math.min(1,dt*28);
+  wideT=Math.max(0,wideT-dt);slowT=Math.max(0,slowT-dt);toastT=Math.max(0,toastT-dt);shake=Math.max(0,shake-dt*3);
+  const target=pad.bw*(wideT>0?1.55:1);pad.w+=(target-pad.w)*Math.min(1,dt*10);
+  for(const b of balls){
+    if(b.stuck){b.x=pad.x;b.y=pad.y-pad.h/2-b.r;continue}
+    const n=Math.ceil(dt/.008);for(let i=0;i<n;i++)step(b,dt/n);
+  }
+  for(let i=balls.length-1;i>=0;i--)if(balls[i].y>H+20)balls.splice(i,1);
+  if(!balls.length){
+    lives--;shake=.4;beep(160,.3,'sawtooth',.05);hud();wideT=0;slowT=0;
+    if(lives<=0){over();return}
+    ball0();toast='Hazır mısın?';toastT=1.2;
+  }
+  for(let i=ups.length-1;i>=0;i--){
+    const u=ups[i];u.y+=170*S*dt;
+    if(u.y>pad.y-pad.h&&u.y<pad.y+pad.h&&Math.abs(u.x-pad.x)<pad.w/2+14*S){ups.splice(i,1);apply(u.t);continue}
+    if(u.y>H+20)ups.splice(i,1);
+  }
+  for(let i=pt.length-1;i>=0;i--){const q=pt[i];q.x+=q.vx*dt;q.y+=q.vy*dt;q.vy+=300*S*dt;q.l-=dt;if(q.l<=0)pt.splice(i,1)}
+  if(!bricks.length){
+    level++;score+=100;build();ball0();ups=[];toast='Seviye '+level;toastT=1.6;hud();beep(880,.3,'square',.04);
+  }
+}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function draw(){
+  ctx.fillStyle='#efe6cc';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(43,34,24,.07)';ctx.lineWidth=1;ctx.beginPath();
+  for(let x=0;x<W;x+=40){ctx.moveTo(x,0);ctx.lineTo(x,H)}for(let y=0;y<H;y+=40){ctx.moveTo(0,y);ctx.lineTo(W,y)}ctx.stroke();
+  if(!pad)return;
+  ctx.save();if(shake>0)ctx.translate((R()-.5)*12*shake,(R()-.5)*12*shake);
+  ctx.lineJoin='round';
+  for(const k of bricks){
+    ctx.fillStyle=k.c;ctx.strokeStyle='#2b2218';ctx.lineWidth=k.hp>1?4:2.5;rr(k.x,k.y,k.w,k.h,5*S);ctx.fill();ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.3)';ctx.fillRect(k.x+4*S,k.y+4*S,k.w-8*S,3*S);
+    if(k.mh>1&&k.hp===1){ctx.strokeStyle='rgba(43,34,24,.7)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(k.x+k.w*.3,k.y);ctx.lineTo(k.x+k.w*.45,k.y+k.h*.5);ctx.lineTo(k.x+k.w*.35,k.y+k.h);ctx.stroke()}
+  }
+  for(const u of ups){
+    ctx.fillStyle='#fbf5e2';ctx.strokeStyle='#2b2218';ctx.lineWidth=3;rr(u.x-14*S,u.y-11*S,28*S,22*S,8*S);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#2b2218';ctx.font='800 '+Math.round(15*S)+'px "Baloo 2",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(u.t,u.x,u.y+1);
+  }
+  ctx.fillStyle='#2b2218';rr(pad.x-pad.w/2,pad.y-pad.h/2,pad.w,pad.h,7*S);ctx.fill();
+  ctx.fillStyle='#e0a82e';rr(pad.x-pad.w/2+4*S,pad.y-pad.h/2+2*S,pad.w-8*S,5*S,3*S);ctx.fill();
+  for(const b of balls){ctx.fillStyle='#fbf5e2';ctx.strokeStyle='#2b2218';ctx.lineWidth=3;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,6.2832);ctx.fill();ctx.stroke()}
+  for(const q of pt){ctx.globalAlpha=Math.max(0,q.l*2);ctx.fillStyle=q.c;ctx.fillRect(q.x-2,q.y-2,4,4)}
+  ctx.globalAlpha=1;ctx.restore();
+  if(balls&&balls.some(b=>b.stuck)&&st==='play'){ctx.fillStyle='rgba(43,34,24,.6)';ctx.font='700 '+Math.round(18*S)+'px "Baloo 2",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('Başlatmak için dokun',W/2,pad.y-40*S)}
+  if(toastT>0){ctx.globalAlpha=Math.min(1,toastT*2);ctx.fillStyle='#2b2218';ctx.font='800 '+Math.round(34*S)+'px "Baloo 2",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(toast,W/2,H*.55);ctx.globalAlpha=1}
+  if(st==='pause'){ctx.fillStyle='rgba(239,230,204,.75)';ctx.fillRect(0,0,W,H);ctx.fillStyle='#2b2218';ctx.font='800 '+Math.round(38*S)+'px "Baloo 2",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('Duraklatıldı',W/2,H/2);ctx.font='600 '+Math.round(18*S)+'px "Baloo 2",system-ui,sans-serif';ctx.fillText('Devam için dokun veya Boşluk',W/2,H/2+32*S)}
+}
+function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;if(st==='play')update(dt);draw();requestAnimationFrame(loop)}
+pad={x:W/2,w:110*S,bw:110*S,y:H-60*S,h:14*S};bricks=[];balls=[];ups=[];pt=[];level=1;build();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
